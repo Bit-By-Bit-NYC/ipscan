@@ -128,6 +128,12 @@ Notes:
   `IcmpSendEcho`, MAC via `SendARP`); only raw-socket pinger modes want admin.
 - Because the SAS isn't baked in, rotating it never requires re-signing.
 - `-WindowMinutes` is the deploy-to-cleanup TTL (default 30), a parameter.
+- **Publisher trust / silent cleanup:** on first run under AllSigned you may see
+  one "untrusted publisher" prompt for `install.ps1` — choose **[A] Always run**
+  (or [R] Run once). `install.ps1` then adds our signing publisher to your
+  **CurrentUser\TrustedPublisher** store, so the unattended cleanup task runs
+  **silently**. This matters because a non-interactive scheduled task can't
+  answer that prompt — without pre-trusting, AllSigned would make cleanup fail.
 - Techs should export scan results into `%LOCALAPPDATA%\BBB\ipscan\logs` so
   cleanup removes them with the tool.
 - Must run **interactively** (a real user session). It refuses to run as SYSTEM,

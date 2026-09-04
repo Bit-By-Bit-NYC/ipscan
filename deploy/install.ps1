@@ -101,6 +101,22 @@ try {
     }
     Write-Host "Signature verification OK."
 
+    # Trust our signing publisher (CurrentUser) so the UNATTENDED cleanup task
+    # runs silently under AllSigned. Without this, AllSigned shows an "untrusted
+    # publisher" prompt that a non-interactive task can't answer, so cleanup
+    # would fail. Per-user store => no admin. The signer is the cert that just
+    # verified above; a new release re-adds its new leaf, so it self-maintains.
+    try {
+        $signer = (Get-AuthenticodeSignature (Join-Path $InstallDir 'cleanup.ps1')).SignerCertificate
+        if ($signer) {
+            $tp = [System.Security.Cryptography.X509Certificates.X509Store]::new('TrustedPublisher','CurrentUser')
+            $tp.Open('ReadWrite')
+            if (-not ($tp.Certificates | Where-Object { $_.Thumbprint -eq $signer.Thumbprint })) { $tp.Add($signer) }
+            $tp.Close()
+            Write-Host "Trusted signing publisher for this user (silent cleanup)."
+        }
+    } catch { Write-Host "Note: could not add publisher to Trusted Publishers: $($_.Exception.Message)" }
+
     $now = Get-Date; $expires = $now.AddMinutes($WindowMinutes)
     [ordered]@{
         installDir    = $InstallDir
