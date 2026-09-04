@@ -1,0 +1,6 @@
+# Never commit distribution secrets or signed output.
+secrets.local.psd1
+*.sas
+sas.txt
+# Signed/packaged output belongs under build\ (already ignored), but guard here too.
+publish/
