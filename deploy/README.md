@@ -158,8 +158,13 @@ Never hand-patch a previously signed binary. Full pipeline every time:
   enforcement won't apply.
 - **Execution policy** on managed servers: signing only gates execution under
   `AllSigned`/`RemoteSigned`. Confirm/adjust policy so signing is meaningful.
-- **SentinelOne on target servers**: exclude by **signer identity** (the BBB
-  signing subject), not by hash — certs rotate every 3 days and each build has a
-  new hash.
+- **SentinelOne on target servers**: exclude the **file hash (SHA1)** of the
+  signed `ipscan.exe` — the tightest match and appropriate for this rarely-updated
+  tool. Note that *signing changes the hash* (Azure Artifact Signing embeds a
+  fresh cert + timestamp each run), so record the hash of the exact signed
+  artifact you deploy and add a new hash only when you cut a new release. Avoid
+  path exclusions (too loose) and publisher-cert exclusions (too broad — they
+  whitelist every BBB-signed binary). Test the signed exe on one endpoint first;
+  a valid signature may clear S1 without any exclusion.
 - **EDR DLL allow-listing**: confirm signing only the outer exe (not JRE DLLs) is
   sufficient for the production EDR/AV.
