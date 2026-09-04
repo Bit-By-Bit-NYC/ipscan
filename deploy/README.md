@@ -11,9 +11,9 @@ GitHub Actions (clean, no S1)         Signing workstation (this repo + Azure)   
 ─────────────────────────────         ───────────────────────────────────────     ─────────────
 tag push  ──► CI builds win64   ──►    package-release.ps1:                         install.ps1 (signed,
               draft release with        - download unsigned exe from release          distributed internally)
-              ipscan-<ver>-win.exe      - jlink minimal JRE                           - downloads payload zip
-              (UNSIGNED)                - assemble payload (exe + jre + cleanup)         from Azure blob
-                                        - sign exe + scripts (Azure Artifact Sign)    - verifies signatures
+              ipscan-<ver>-win.exe      - extract jar, inject swt-gdip                 - downloads payload zip
+              (UNSIGNED)                - jpackage -> native app-image                   from Azure blob
+                                        - sign native exe + scripts (Azure)           - verifies signatures
                                         - zip payload ──► Azure blob                  - installs to fixed dir
                                         - emit signed install.ps1 + sweep.ps1         - schedules cleanup (TTL)
                                                                                       - self-deletes
@@ -24,8 +24,18 @@ tag push  ──► CI builds win64   ──►    package-release.ps1:         
 Why the build runs on CI and not locally: SentinelOne on the signing workstation
 injects a JVMTI Java agent and runs a network monitor that breaks the JVM NIO
 selector loopback Gradle needs (`Unable to establish loopback connection`).
-`javac`/`jar`/`jlink` are unaffected, but Gradle is, so the canonical build is
-done on a clean GitHub runner and only signing/packaging happens locally.
+`javac`/`jar`/`jpackage` are unaffected, but Gradle is, so the canonical build
+is done on a clean GitHub runner and only signing/packaging happens locally.
+
+**Why jpackage (not the launcher+jar exe):** the upstream Windows build is a
+self-executing jar (a launcher stub with the jar appended). Authenticode-signing
+that hybrid appends the signature *after* the jar's ZIP trailer, which makes the
+JVM reject it ("Invalid or corrupt jarfile"). So the pipeline extracts the jar
+and rebuilds it with `jpackage` into a real native `ipscan.exe` (a normal PE)
+with `app\ipscan.jar` + `runtime\` beside it — that exe signs cleanly and runs.
+It also **injects `swt-gdip-win32*.dll`** (which the upstream Gradle build
+excludes but SWT needs at startup) and bakes `--add-opens java.base/java.net`
+into the launcher (required by the hostname fetcher).
 
 ## Pinned version
 
@@ -39,7 +49,7 @@ done on a clean GitHub runner and only signing/packaging happens locally.
 | File | Runs on | Signed | Purpose |
 |------|---------|--------|---------|
 | `signing.config.psd1` | signing box | — | Signing account/profile, release tag, blob URL, install defaults. **Set the blob fields before signing.** |
-| `package-release.ps1` | signing box | — | Download unsigned CI build → jlink → sign → zip payload → (upload). |
+| `package-release.ps1` | signing box | — | Download unsigned CI build → extract jar → inject swt-gdip → jpackage native app-image → sign → zip payload → (upload). |
 | `install.ps1` | target | ✅ | Self-deleting bootstrap: download payload, verify, install, schedule cleanup. |
 | `cleanup.ps1` | target | ✅ | Uninstaller: remove exe, JRE, logs, `.ipscan`, JavaSoft prefs; handles "in use". |
 | `sweep.ps1` | fleet | ✅ | Detect/remove stray deployments past TTL (separate RMM cadence). |
@@ -62,7 +72,8 @@ The asset we consume is `ipscan-<ver>-win.exe` (portable launcher + jar, unsigne
 ## 2. Sign & package (local)
 
 Prerequisites on the signing workstation:
-- JDK 21+ (`JAVA_HOME`) for `jlink`. A portable Temurin unpack is fine.
+- JDK 21+ (`JAVA_HOME`) for `jpackage`/`jar`. A portable Temurin unpack is fine.
+  (`jpackage` app-image needs no WiX; WiX is only for msi/exe installers.)
 - `ArtifactSigning` PowerShell module + Artifact Signing client tools (dlib),
   and `az login` as an identity holding the **Code Signing Certificate Profile
   Signer** role on the `bbbRmmScripts` account.
@@ -187,5 +198,7 @@ Never hand-patch a previously signed binary. Full pipeline every time:
   path exclusions (too loose) and publisher-cert exclusions (too broad — they
   whitelist every BBB-signed binary). Test the signed exe on one endpoint first;
   a valid signature may clear S1 without any exclusion.
+  Current release (`3.10.0-bbb.1`) ipscan.exe **SHA1: `0EF81DBC17BC4E18E0DA0954686A6C272B8D47E3`**
+  (the actual value is also written to `release-manifest.json` as `exeSha1` on each build).
 - **EDR DLL allow-listing**: confirm signing only the outer exe (not JRE DLLs) is
   sufficient for the production EDR/AV.
