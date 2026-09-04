@@ -77,13 +77,22 @@ if (Test-Path $crash) { Remove-Item $crash -Force -ErrorAction SilentlyContinue 
 $lnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Angry IP Scanner (BBB).lnk'
 if (Test-Path $lnk) { Remove-Item $lnk -Force -ErrorAction SilentlyContinue }
 
-# --- install dir (exe, jre, cleanup.ps1, logs, state) -----------------------
+# --- remove this user's scheduled task (before deleting the dir) ------------
+Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+
+# --- install dir (exe, runtime, cleanup.ps1, logs, state) -------------------
+# This script usually runs FROM inside $InstallDir (as the payload's cleanup.ps1
+# or via the scheduled task), so it can't delete its own folder while running.
+# Move cwd out, try an inline delete, and if anything remains, hand the final
+# removal to a detached process that runs after this PowerShell exits.
+Set-Location $env:TEMP
 if (Test-Path $InstallDir) {
     Remove-Item $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
-    if (Test-Path $InstallDir) { Write-Host "Install dir partially locked (running script); will clear on next run." }
+    if (Test-Path $InstallDir) {
+        Start-Process -WindowStyle Hidden -FilePath cmd.exe `
+            -ArgumentList '/c','ping 127.0.0.1 -n 3 >nul & rd /s /q',"`"$InstallDir`""
+        Write-Host "Final removal of $InstallDir scheduled after exit."
+    }
     else { Write-Host "Removed $InstallDir" }
 }
-
-# --- remove this user's scheduled task --------------------------------------
-Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 Write-Host "Cleanup complete for $env:USERNAME on $env:COMPUTERNAME."
