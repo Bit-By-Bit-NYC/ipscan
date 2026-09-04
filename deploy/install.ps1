@@ -27,7 +27,7 @@
 
 .PARAMETER PayloadBaseUrl  Non-secret base URL (no SAS). Baked in at sign time.
 .PARAMETER Sas             Read-only SAS token (from IT Glue). Prompted if omitted.
-.PARAMETER WindowMinutes   Deploy-to-cleanup TTL. Default 60.
+.PARAMETER WindowMinutes   Deploy-to-cleanup TTL. Default 30.
 .PARAMETER InstallDir      Defaults to %LOCALAPPDATA%\BBB\ipscan.
 .PARAMETER OnInUse         'Extend' (default) grants one grace; 'Kill' removes now.
 .PARAMETER GraceMinutes    Grace length when OnInUse=Extend. Default 30.
@@ -42,7 +42,7 @@
 param(
     [string]$PayloadBaseUrl    = '@@PAYLOAD_BASE_URL@@',
     [string]$Sas,
-    [int]$WindowMinutes        = 60,
+    [int]$WindowMinutes        = 30,
     [string]$InstallDir        = (Join-Path $env:LOCALAPPDATA 'BBB\ipscan'),
     [ValidateSet('Extend','Kill')][string]$OnInUse = 'Extend',
     [int]$GraceMinutes         = 30,

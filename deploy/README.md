@@ -127,7 +127,7 @@ Notes:
   user-scoped cleanup. `ipscan.exe` also runs fine without admin (ICMP via
   `IcmpSendEcho`, MAC via `SendARP`); only raw-socket pinger modes want admin.
 - Because the SAS isn't baked in, rotating it never requires re-signing.
-- `-WindowMinutes` is the deploy-to-cleanup TTL (default 60), a parameter.
+- `-WindowMinutes` is the deploy-to-cleanup TTL (default 30), a parameter.
 - Techs should export scan results into `%LOCALAPPDATA%\BBB\ipscan\logs` so
   cleanup removes them with the tool.
 - Must run **interactively** (a real user session). It refuses to run as SYSTEM,

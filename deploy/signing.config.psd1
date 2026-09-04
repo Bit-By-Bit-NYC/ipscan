@@ -32,6 +32,6 @@
     # --- Install defaults baked into the signed bootstrap -----------------
     # InstallDir is per-user (%LOCALAPPDATA%\BBB\ipscan), computed at run time -
     # not baked. OnInUse default ('Extend') lives in install.ps1.
-    WindowMinutes          = 60      # deploy-to-cleanup TTL (baked)
+    WindowMinutes          = 30      # deploy-to-cleanup TTL (baked)
     GraceMinutes           = 30      # grace extension when in use (baked)
 }
