@@ -22,7 +22,8 @@
     A deployment is "stray" if older than this. Default 24.
 
 .PARAMETER SearchRoots
-    Roots to scan. Default: C:\ProgramData\BBB, plus C:\Users\*\AppData\Local\Temp
+    Roots to scan. Default: every user's %LOCALAPPDATA%\BBB (the per-user install
+    location), plus C:\Users\*\AppData\Local\Temp, C:\ProgramData\BBB (legacy),
     and C:\Windows\Temp to catch copies left in temp locations.
 
 .PARAMETER Remove
@@ -49,6 +50,7 @@ $now = (Get-Date).ToUniversalTime()
 $roots = [System.Collections.Generic.List[string]]::new()
 $SearchRoots | ForEach-Object { $roots.Add($_) }
 Get-ChildItem 'C:\Users' -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+    $roots.Add((Join-Path $_.FullName 'AppData\Local\BBB'))
     $roots.Add((Join-Path $_.FullName 'AppData\Local\Temp'))
 }
 
@@ -97,22 +99,15 @@ $strays = @($findings | Where-Object Stray)
 if ($Remove -and $strays.Count -gt 0) {
     foreach ($s in $strays) {
         Write-Host "Removing stray: $($s.Dir) (age $($s.AgeHours)h)"
-        $localCleanup = Join-Path $s.Dir 'cleanup.ps1'
-        $done = $false
-        if (Test-Path $localCleanup) {
-            try {
-                & powershell.exe -NoProfile -ExecutionPolicy AllSigned -File $localCleanup -InstallDir $s.Dir -Force
-                $done = ($LASTEXITCODE -eq 0)
-            } catch { $done = $false }
-        }
-        if (-not $done) {
-            # fallback wipe (state/exe present but cleanup missing or blocked)
-            Get-CimInstance Win32_Process -Filter "Name='ipscan.exe'" -ErrorAction SilentlyContinue |
-                Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($s.Dir,[StringComparison]::OrdinalIgnoreCase) } |
-                ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-            Start-Sleep 1
-            Remove-Item $s.Dir -Recurse -Force -ErrorAction SilentlyContinue
-        }
+        # Sweep is the elevated (RMM/SYSTEM) fleet backstop: it removes the install
+        # dir directly. A stray belonging to another user is disabled by removing
+        # the dir; that user's own prefs node / task are left for their next
+        # logon-cleanup (harmless settings, and not reachable cross-user here).
+        Get-CimInstance Win32_Process -Filter "Name='ipscan.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($s.Dir,[StringComparison]::OrdinalIgnoreCase) } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        Start-Sleep 1
+        Remove-Item $s.Dir -Recurse -Force -ErrorAction SilentlyContinue
         $s | Add-Member -NotePropertyName Removed -NotePropertyValue (-not (Test-Path $s.Dir)) -Force
     }
 }

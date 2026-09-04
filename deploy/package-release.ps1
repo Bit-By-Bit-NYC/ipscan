@@ -108,9 +108,10 @@ $installOut = Join-Path $distDir 'install.ps1'
 (Get-Content (Join-Path $scriptDir 'install.ps1') -Raw).
     Replace("'@@PAYLOAD_BASE_URL@@'", "'" + [string]$baseUrl + "'").
     Replace("[int]`$WindowMinutes        = 60",       "[int]`$WindowMinutes        = $([int]$cfg.WindowMinutes)").
-    Replace("[string]`$InstallDir        = 'C:\ProgramData\BBB\ipscan'", "[string]`$InstallDir        = '$($cfg.InstallDir)'").
     Replace("[int]`$GraceMinutes         = 30",       "[int]`$GraceMinutes         = $([int]$cfg.GraceMinutes)") |
     Set-Content $installOut -Encoding UTF8
+# NOTE: InstallDir is computed at run time (%LOCALAPPDATA%\BBB\ipscan) inside
+# install.ps1 - it is intentionally not baked here.
 Copy-Item (Join-Path $scriptDir 'sweep.ps1') (Join-Path $distDir 'sweep.ps1')
 
 # --- 4. sign ----------------------------------------------------------------

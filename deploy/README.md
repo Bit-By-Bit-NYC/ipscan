@@ -96,38 +96,54 @@ Signing notes:
 
 - Upload the payload zip to the blob (`-Upload` or manually).
 - Store the read-only **SAS token in IT Glue** for techs to retrieve.
-- Hand the signed `install.ps1` to techs / push via RMM. It prompts for the SAS
-  token (or takes `-Sas`), downloads the payload, verifies Authenticode (Valid +
-  expected signer) on `ipscan.exe` and `cleanup.ps1`, installs to
-  `C:\ProgramData\BBB\ipscan`, schedules cleanup, and deletes itself regardless
-  of where it was run from.
+- The tech runs the signed `install.ps1` **in their own session — no admin
+  required**. It prompts for the SAS token (or takes `-Sas`), downloads the
+  payload, verifies Authenticode (Valid + expected signer) on `ipscan.exe` and
+  `cleanup.ps1`, installs to **`%LOCALAPPDATA%\BBB\ipscan`**, schedules cleanup,
+  **auto-launches the scanner**, drops a Start-Menu shortcut, and deletes itself
+  regardless of where it was run from.
 
 ```powershell
-# tech run: prompts for the SAS token from IT Glue
+# tech run: prompts for the SAS token from IT Glue, then opens the scanner
 powershell -ExecutionPolicy AllSigned -File .\install.ps1 -WindowMinutes 90
 
-# unattended / RMM: pass the token
-powershell -ExecutionPolicy AllSigned -File .\install.ps1 -Sas '<sas from IT Glue>' -WindowMinutes 90
+# pass the token / skip auto-launch
+powershell -ExecutionPolicy AllSigned -File .\install.ps1 -Sas '<sas from IT Glue>' -WindowMinutes 90 -NoLaunch
 ```
 
-Because the SAS isn't baked in, rotating it (mint a new one, update IT Glue)
-never requires re-signing `install.ps1`.
-
-- `-WindowMinutes` is the deploy-to-cleanup TTL (default 60), a parameter not a
-  constant.
-- Techs should export scan results into `...\ipscan\logs` so cleanup removes them
-  with the tool.
+Notes:
+- **No elevation** anywhere: per-user install path, a current-user cleanup task,
+  user-scoped cleanup. `ipscan.exe` also runs fine without admin (ICMP via
+  `IcmpSendEcho`, MAC via `SendARP`); only raw-socket pinger modes want admin.
+- Because the SAS isn't baked in, rotating it never requires re-signing.
+- `-WindowMinutes` is the deploy-to-cleanup TTL (default 60), a parameter.
+- Techs should export scan results into `%LOCALAPPDATA%\BBB\ipscan\logs` so
+  cleanup removes them with the tool.
+- Must run **interactively** (a real user session). It refuses to run as SYSTEM,
+  since per-user paths would be wrong — so don't push it via RMM-as-SYSTEM.
 
 ## 4. Uninstall / cleanup
 
-`cleanup.ps1` runs from the scheduled task at expiry (or manually). It removes
-the install dir, per-user `.ipscan` folders, and the `HKCU\...\JavaSoft\Prefs\ipscan`
-registry node (ipscan uses Java Preferences → the registry, not a `.ipscan` file).
+`cleanup.ps1` runs from the per-user scheduled task, which fires on **two
+triggers** so the tech needn't stay logged on for the whole window:
+- a **timer at expiry** (fires if still logged on), and
+- an **At-Logon trigger** (fires at the next logon if the tech signed off before
+  the timer — so a sign-off effectively cleans up at next sign-in).
+
+It removes only the current user's artifacts: the install dir, `%USERPROFILE%\.ipscan`,
+the `HKCU\...\JavaSoft\Prefs\ipscan` registry node (ipscan uses Java Preferences
+→ the registry, not a `.ipscan` file), the Start-Menu shortcut, and the task
+itself. No admin needed.
 
 "Still in use" policy (from `deploy-state.json`):
 - **Extend** (default): if `ipscan.exe` is running, grant one grace extension of
-  `GraceMinutes`, then proceed to terminate+delete on the next run.
+  `GraceMinutes` (re-arming the timer, keeping the logon trigger), then
+  terminate+delete on the next run.
 - **Kill**: terminate `ipscan.exe` and delete immediately.
+
+A true "at the moment of sign-off" trigger would require admin (a Security-event
+or GPO logoff hook), so the At-Logon catch-up is the non-elevated equivalent; the
+fleet sweep covers machines left signed off for long periods.
 
 ## 5. Fleet safety net
 
@@ -146,18 +162,23 @@ Never hand-patch a previously signed binary. Full pipeline every time:
 
 1. Cut a new build tag (`3.x.y-bbb.N`) at the upstream release commit; push it.
 2. Wait for CI's draft release with the unsigned `*-win.exe`.
-3. Update `ReleaseTag`, `PayloadBlobName`, `PayloadUrl` in `signing.config.psd1`.
+3. Update `ReleaseTag` and `PayloadBlobName` in `signing.config.psd1`, and mint a
+   new read-only SAS for the new blob (store it in IT Glue).
 4. `.\package-release.ps1 -Upload`.
-5. Distribute the new signed `install.ps1`.
+5. Distribute the new signed `install.ps1`. (Re-sign changes the exe hash — update
+   the S1 hash exclusion.)
 
 ## Open items to confirm
 
-- **RMM script execution**: confirm the RMM runs the literal signed `.ps1` from
-  disk, not `powershell -EncodedCommand <content>`. If it pipes content, the
+- **Interactive execution**: `install.ps1` runs per-user and **refuses to run as
+  SYSTEM**. If distributing via RMM, run it **as the logged-on user**, not as
+  SYSTEM. (The fleet `sweep.ps1` is the piece that runs elevated/SYSTEM.)
+- **Script execution reaches the file**: if the RMM pipes script content via
+  `powershell -EncodedCommand` instead of running the literal `.ps1`, the
   Authenticode signature never reaches the executing process and `AllSigned`
-  enforcement won't apply.
-- **Execution policy** on managed servers: signing only gates execution under
-  `AllSigned`/`RemoteSigned`. Confirm/adjust policy so signing is meaningful.
+  won't apply. Confirm it runs the file from disk.
+- **Execution policy** on target endpoints: signing only gates execution under
+  `AllSigned`/`RemoteSigned`. Confirm/adjust so signing is meaningful.
 - **SentinelOne on target servers**: exclude the **file hash (SHA1)** of the
   signed `ipscan.exe` — the tightest match and appropriate for this rarely-updated
   tool. Note that *signing changes the hash* (Azure Artifact Signing embeds a

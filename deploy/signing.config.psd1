@@ -29,9 +29,9 @@
     Container              = 'ipscan'
     PayloadBlobName        = 'ipscan-3.10.0-bbb.1.zip'
 
-    # --- Install defaults (baked into the signed bootstrap) ----------------
-    InstallDir             = 'C:\ProgramData\BBB\ipscan'
-    WindowMinutes          = 60      # deploy-to-cleanup TTL
-    OnInUse                = 'Extend' # Extend (grant one grace) | Kill
-    GraceMinutes           = 30
+    # --- Install defaults baked into the signed bootstrap -----------------
+    # InstallDir is per-user (%LOCALAPPDATA%\BBB\ipscan), computed at run time -
+    # not baked. OnInUse default ('Extend') lives in install.ps1.
+    WindowMinutes          = 60      # deploy-to-cleanup TTL (baked)
+    GraceMinutes           = 30      # grace extension when in use (baked)
 }
